@@ -1,0 +1,10 @@
+# 参考: ORM の変数（JSON で渡す場合は .env の値から scripts/10-infra-up.sh が自動生成する）。
+# このファイルをコピーした *.tfvars はコミットしないこと（.gitignore 済み）。
+# tenancy_ocid / region は ORM が自動設定するため不要。
+compartment_ocid   = "ocid1.compartment.oc1..<your-compartment>"
+admin_cidrs        = ["203.0.113.10/32"]
+cluster_name       = "llm-demo"
+kubernetes_version = "v1.35.2"
+worker_count       = 3
+worker_ocpus       = 2
+worker_memory_gb   = 16

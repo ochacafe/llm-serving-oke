@@ -1,0 +1,30 @@
+# ---- 接続情報・シークレット（絶対にコミットしない） ----
+.env
+.env.*
+!.env.example
+kubeconfig
+kubeconfig*
+.state/
+*.tfvars
+!terraform.tfvars.example
+*.tfstate
+*.tfstate.*
+*.pem
+*.key
+
+# ---- 生成物 ----
+.terraform/
+.terraform.lock.hcl
+stack.zip
+out/
+*.cast
+loadgen/.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Obsidian 連携（個人環境）
+.obsidian-dir
+
+# 実装計画書（ローカルのみ）
+concept.md

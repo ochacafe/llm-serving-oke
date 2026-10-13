@@ -1,0 +1,52 @@
+# loadgen をクラスタ内で実行するための Pod（手元 → シカゴの port-forward 遅延を TTFT に混ぜないため）。
+# ソースは ConfigMap（loadgen-src）で渡し、起動時に uv sync する。scripts/lib.sh の ensure_loadgen が適用する。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: loadgen
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: loadgen
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: loadgen }
+  template:
+    metadata:
+      labels: { app: loadgen }
+      annotations:
+        loadgen/src-hash: "__SRC_HASH__"
+    spec:
+      containers:
+        - name: loadgen
+          image: __LOADGEN_IMAGE__
+          workingDir: /work
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              mkdir -p /work/src/loadgen /tmp/out
+              cp /src/pyproject.toml /src/uv.lock /work/
+              cp /src/__init__.py /src/cli.py /work/src/loadgen/
+              uv sync --frozen --quiet
+              touch /tmp/ready
+              exec sleep infinity
+          env:
+            - { name: UV_LINK_MODE, value: copy }
+            - { name: TERM, value: xterm-256color }
+            - { name: COLORTERM, value: truecolor }
+          readinessProbe:
+            exec: { command: ["test", "-f", "/tmp/ready"] }
+            periodSeconds: 3
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+            limits: { cpu: "2", memory: 1Gi }
+          volumeMounts:
+            - { name: src, mountPath: /src }
+      volumes:
+        - name: src
+          configMap:
+            name: loadgen-src

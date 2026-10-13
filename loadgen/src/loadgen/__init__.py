@@ -1,0 +1,1 @@
+"""Demo load generator."""

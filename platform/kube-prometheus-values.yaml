@@ -1,0 +1,102 @@
+# kube-prometheus-stack（デモ用に最小構成）
+# - Grafana は匿名閲覧 ON。管理者パスワードは 20-platform-install.sh がランダム生成した Secret を参照（リポジトリに置かない）
+# - Prometheus は 5 秒間隔で scrape し、llm-demo の Pod をアノテーションベースで収集する
+
+alertmanager:
+  enabled: false
+
+defaultRules:
+  create: false
+
+grafana:
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  grafana.ini:
+    auth.anonymous:
+      enabled: true
+      org_role: Viewer
+    dashboards:
+      default_home_dashboard_path: /tmp/dashboards/dashboard-routing.json
+  service:
+    type: ClusterIP
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: monitoring
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+
+prometheus:
+  service:
+    type: ClusterIP
+  prometheusSpec:
+    scrapeInterval: 5s
+    evaluationInterval: 5s
+    retention: 2d
+    resources:
+      requests: { cpu: 200m, memory: 1Gi }
+    additionalScrapeConfigs:
+      - job_name: llm-demo-pods
+        scrape_interval: 5s
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [llm-demo]
+        relabel_configs:
+          # prometheus.io/scrape=true の Pod のみ
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_phase]
+            action: keep
+            regex: Running
+          # prometheus.io/scheme（TLS 時は https）
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scheme]
+            action: replace
+            regex: (https?)
+            target_label: __scheme__
+          # prometheus.io/path
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            regex: (.+)
+            target_label: __metrics_path__
+          # prometheus.io/port でアドレスを置き換え
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          # コンテナポートごとに重複ターゲットができるので 1 つにまとめる
+          - source_labels: [__address__]
+            action: replace
+            target_label: instance
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+            target_label: llmisvc
+          - source_labels: [__meta_kubernetes_pod_label_llm_d_ai_role]
+            target_label: role
+          - source_labels: [__meta_kubernetes_pod_label_kserve_io_component]
+            target_label: component
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+        tls_config:
+          insecure_skip_verify: true
+
+# デモに不要なコンポーネントは止めてノード資源を節約
+kubeStateMetrics:
+  enabled: true
+nodeExporter:
+  enabled: true
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false

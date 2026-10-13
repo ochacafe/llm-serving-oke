@@ -1,0 +1,3 @@
+# set -e 前提のスクリプト群。info レベルの指摘のうちデモ用途で許容するもの
+disable=SC1091,SC2015,SC2016,SC2164,SC2329
+external-sources=true

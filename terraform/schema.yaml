@@ -1,0 +1,111 @@
+title: "vLLM / llm-d / KServe demo on OKE"
+description: "llm-d-inference-sim を使った LLM サービングデモ用の OKE クラスタ（CPU ノードのみ）を作成します。"
+informationalText: "Apply 完了後、出力の cluster_id を使って手元で scripts/10-infra-up.sh --cluster-id <cluster_id> → scripts/20-platform-install.sh を実行してください。"
+schemaVersion: 1.1.0
+version: "20261012"
+locale: "en"
+
+variableGroups:
+  - title: "Hidden"
+    visible: false
+    variables:
+      - tenancy_ocid
+      - region
+
+  - title: "Placement"
+    variables:
+      - compartment_ocid
+      - cluster_name
+
+  - title: "Access"
+    variables:
+      - admin_cidrs
+
+  - title: "Cluster"
+    variables:
+      - kubernetes_version
+      - worker_count
+      - worker_shape
+      - worker_ocpus
+      - worker_memory_gb
+      - worker_boot_volume_gb
+
+variables:
+  compartment_ocid:
+    type: oci:identity:compartment:id
+    title: "Compartment"
+    required: true
+
+  cluster_name:
+    type: string
+    title: "Cluster name"
+    default: "llm-demo"
+    required: true
+
+  admin_cidrs:
+    type: array
+    items:
+      type: string
+      pattern: "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+    title: "Kubernetes API の許可 CIDR"
+    description: "Kubernetes API エンドポイントに接続する端末のグローバル IP（例: 203.0.113.10/32）。会場で IP が変わったらスタックを更新して再 Apply します。"
+    required: true
+
+  kubernetes_version:
+    type: enum
+    title: "Kubernetes version"
+    enum:
+      - "v1.35.2"
+      - "v1.36.1"
+      - "v1.34.2"
+    default: "v1.35.2"
+    required: true
+
+  worker_count:
+    type: integer
+    title: "Worker nodes"
+    minimum: 1
+    maximum: 10
+    default: 3
+    required: true
+
+  worker_shape:
+    type: enum
+    title: "Worker shape (x86)"
+    enum:
+      - "VM.Standard.E5.Flex"
+      - "VM.Standard.E4.Flex"
+    default: "VM.Standard.E5.Flex"
+    required: true
+
+  worker_ocpus:
+    type: integer
+    title: "OCPUs per worker"
+    minimum: 1
+    maximum: 16
+    default: 2
+    required: true
+
+  worker_memory_gb:
+    type: integer
+    title: "Memory (GB) per worker"
+    minimum: 8
+    maximum: 128
+    default: 16
+    required: true
+
+  worker_boot_volume_gb:
+    type: integer
+    title: "Boot volume (GB) per worker"
+    minimum: 50
+    maximum: 200
+    default: 50
+    required: true
+
+outputs:
+  cluster_id:
+    type: ocid
+    title: "OKE cluster OCID"
+  kubeconfig_command:
+    type: copyableString
+    title: "kubeconfig 生成コマンド"

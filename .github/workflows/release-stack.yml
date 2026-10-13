@@ -1,0 +1,24 @@
+# v* タグの push で terraform/ を stack.zip にして GitHub Release に添付する。
+# README の Deploy to OCI ボタンは releases/latest/download/stack.zip を参照する。
+name: release-stack
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build stack.zip
+        run: bash scripts/build-stack-zip.sh "${GITHUB_WORKSPACE}/stack.zip" && unzip -l stack.zip
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: stack.zip
+          generate_release_notes: true
