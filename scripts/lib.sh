@@ -28,6 +28,9 @@ export OCI_CLI_PROFILE="${OCI_CLI_PROFILE:-DEFAULT}"
 # operator 上では OCI CLI をインスタンス・プリンシパルで認証する（鍵をインスタンスに置かない）。
 if [[ -f "${HOME}/.llm-demo-operator" ]]; then
   export ON_OPERATOR=1
+  # SSH 経由の非対話シェルではロケールが C になり、日本語や罫線が化けるため UTF-8 を指定
+  export LANG="${LANG:-C.UTF-8}"
+  [[ "${LANG}" == *UTF-8* || "${LANG}" == *utf8* ]] || export LANG=C.UTF-8
   export OCI_CLI_AUTH=instance_principal
   unset OCI_CLI_PROFILE
 else
@@ -57,8 +60,9 @@ die()  { ng "$*"; exit 1; }
 
 # デモ中の見出し（いま何を見せているか）
 banner() {
-  local line
-  line="$(printf '%*s' 72 '' | tr ' ' '─')"
+  local line="" i
+  # tr はマルチバイト文字を扱えない環境があるのでループで組み立てる
+  for ((i = 0; i < 72; i++)); do line+="─"; done
   printf '\n%s%s%s\n%s%s  %s%s\n%s%s%s\n' "${C_CYAN}" "${line}" "${C_RESET}" \
     "${C_CYAN}" "${C_BOLD}" "$*" "${C_RESET}" "${C_CYAN}" "${line}" "${C_RESET}"
 }
@@ -311,11 +315,11 @@ wait_llmisvc_ready() {
   kubectl wait --for=condition=Ready "llminferenceservice/${name}" -n "${DEMO_NS}" --timeout="${timeout}s"
 }
 
+# 手元の Mac で実行しているときだけブラウザを開く。
+# operator（Linux）の `open` は openvt（仮想コンソール）なので使わない。
 open_url() {
-  if [[ "${DEMO_AUTO:-0}" == "1" ]]; then
-    log "open ${1}"
-  elif command -v open >/dev/null 2>&1; then
-    open "$1"
+  if [[ "${DEMO_AUTO:-0}" != "1" && "${ON_OPERATOR}" != "1" && "$(uname -s)" == "Darwin" ]]; then
+    open "$1" || log "ブラウザで開いてください: $1"
   else
     log "ブラウザで開いてください: $1"
   fi
