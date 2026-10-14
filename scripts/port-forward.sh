@@ -32,7 +32,8 @@ if [[ "${ON_OPERATOR}" != "1" ]]; then
       stop_tunnel
       forwards=()
       for p in "${PORTS[@]}"; do forwards+=(-L "127.0.0.1:${p}:127.0.0.1:${p}"); done
-      ssh -F "${SSH_CONFIG}" -f -N -o ExitOnForwardFailure=yes "${forwards[@]}" llm-demo-operator
+      ssh -F "${SSH_CONFIG}" -f -N -o ExitOnForwardFailure=yes "${forwards[@]}" llm-demo-operator \
+        </dev/null >/dev/null 2>&1
       pgrep -f "ssh -F ${SSH_CONFIG} -f -N" | head -1 >"${TUNNEL_PID}"
       wait_until 30 "手元 → gateway  ${GATEWAY_URL}" curl -s -o /dev/null "${GATEWAY_URL}"
       wait_until 30 "手元 → grafana  ${GRAFANA_URL}" curl -sf -o /dev/null "${GRAFANA_URL}/api/health"

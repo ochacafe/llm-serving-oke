@@ -222,6 +222,7 @@ Host llm-demo-bastion
   StrictHostKeyChecking accept-new
   UserKnownHostsFile ${STATE_DIR}/known_hosts
   ServerAliveInterval 30
+  LogLevel ERROR
 
 Host llm-demo-operator
   HostName $2
@@ -232,6 +233,7 @@ Host llm-demo-operator
   StrictHostKeyChecking accept-new
   UserKnownHostsFile ${STATE_DIR}/known_hosts
   ServerAliveInterval 30
+  LogLevel ERROR
 CFG
 }
 

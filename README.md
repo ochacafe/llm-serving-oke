@@ -195,7 +195,7 @@ make down        # = bash scripts/90-infra-down.sh（ORM Destroy → スタッ�
 
 | 症状 | 対処 |
 |---|---|
-| `make` が SSH 接続できない | 手元の IP が変わった可能性。`make up` で許可 CIDR を更新 |
+| `make` が SSH 接続できない | 手元の IP が変わった可能性。`make up` で許可 CIDR を更新。社内ネットワークなどで OCI 宛ての出口 IP が自動検出した IP と異なる場合は、`.env` に `ADMIN_CIDRS=0.0.0.0/0` を設定して `make up`（bastion は鍵認証の SSH のみ受け付ける） |
 | operator で `kubectl` が認可エラー | 動的グループ / ポリシーの反映待ち（数分）。`make up` を再実行すると kubeconfig 生成を再試行する |
 | Grafana が開けない | `make pf` を再実行（operator 側の port-forward は切断時に自動で張り直し、手元の SSH トンネルも張り直す） |
 | LLMInferenceService が Ready にならない | `kubectl describe llmisvc -n llm-demo <name>` / `kubectl logs -n kserve deploy/llmisvc-controller-manager` |
