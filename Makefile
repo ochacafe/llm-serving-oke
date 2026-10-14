@@ -20,7 +20,7 @@ pf: ## gateway:8080 / grafana:3000 / prometheus:9090 を port-forward
 pf-stop: ## port-forward を停止
 	bash scripts/port-forward.sh stop
 
-preflight: ## 本番前の自己診断（Step 1〜3 を自動で通して判定）
+preflight: ## 自己診断（Step 1〜3 を自動で通して判定）
 	DEMO_AUTO=1 bash scripts/30-preflight.sh
 
 demo-1: ## Step 1: KServe

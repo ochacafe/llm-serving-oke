@@ -15,7 +15,7 @@ OCI Container Engine for Kubernetes (OKE) の CPU ノードだけで動きます
 | 締め | `diff` で Step 1 → 2 → 3 の差分 | — |
 
 ```
-発表者の Mac ──port-forward 8080──▶ agentgateway (Gateway: kserve-ingress-gateway)
+手元の端末 ──port-forward 8080──▶ agentgateway (Gateway: kserve-ingress-gateway)
                                      ├─ HTTPRoute ─▶ Service ─▶ sim-baseline ×4      (P2C)
                                      ├─ HTTPRoute ─▶ InferencePool ─▶ EPP ─▶ sim-llmd ×4
                                      └─ HTTPRoute ─▶ InferencePool ─▶ EPP ─▶ sim-pd (prefill ×2 / decode ×2 + routing sidecar)
@@ -48,7 +48,7 @@ OCI Container Engine for Kubernetes (OKE) の CPU ノードだけで動きます
 | kubeconfig | `./kubeconfig`（`.gitignore` 済み。トークンは OCI CLI が都度発行） |
 | Grafana 管理者パスワード | クラスタ内でランダム生成した Secret のみ（匿名閲覧 ON なので通常は不要） |
 
-Kubernetes API エンドポイントは発表者の IP（`admin_cidrs`）だけに開放し、Gateway / Grafana は LoadBalancer を作らず port-forward でのみアクセスします。
+Kubernetes API エンドポイントは利用者の IP（`admin_cidrs`）だけに開放し、Gateway / Grafana は LoadBalancer を作らず port-forward でのみアクセスします。
 CI（`.github/workflows/ci.yml`）で gitleaks と OCID 混入チェックを実行します。
 
 ---
@@ -78,7 +78,7 @@ make up                # = bash scripts/10-infra-up.sh
 4. 出力の `cluster_id` から `./kubeconfig` を生成し、ノード Ready を待つ
 
 リージョンは OCI CLI プロファイルのものを使います（コードにリージョン名は持たせていません）。
-**会場で IP が変わったら `make up` を再実行**すれば許可 CIDR だけ更新されます。
+**手元のグローバル IP が変わったら `make up` を再実行**すれば許可 CIDR だけ更新されます。
 
 ### B. Deploy to OCI ボタンから
 
@@ -105,7 +105,7 @@ Gateway API CRD → cert-manager → KServe(LLMInferenceService) → GIE CRD →
 ## 3. デモ
 
 ```bash
-make preflight   # 本番前に Step 1〜3 を自動で通して受け入れ基準を判定（約 10 分）
+make preflight   # Step 1〜3 を自動で通して受け入れ基準を判定（約 10 分）
 make demo-1      # Step 1
 make demo-2      # Step 2（Grafana: http://localhost:3000/d/routing）
 make demo-3      # Step 3（別ペインで make demo-3-logs、Grafana: http://localhost:3000/d/pd）
@@ -113,7 +113,7 @@ make demo-diff   # 締め
 make reset       # デモ用リソースを消して Step 1 前に戻す
 ```
 
-各スクリプトは「コマンドを表示 → Enter で実行」形式です。`DEMO_AUTO=1` で Enter 待ちをスキップします（リハーサル・録画用）。
+各スクリプトは「コマンドを表示 → Enter で実行」形式です。`DEMO_AUTO=1` で Enter 待ちをスキップします。
 
 ### loadgen はクラスタ内で動かす
 
@@ -139,23 +139,7 @@ Deploy ボタンで作った場合は、OCI コンソールの Resource Manager 
 
 ---
 
-## 当日のチェックリスト
-
-**前日**
-- [ ] `make up && make platform && make pf && make preflight` が全項目 OK
-- [ ] `asciinema rec` で Step 1〜3 を録画し、Grafana のスナップショットを保存（保険）
-- [ ] 発表用ターミナルのフォントサイズ・配色、ブラウザで Grafana の 2 ダッシュボードをブックマーク
-
-**1 時間前**
-- [ ] 会場 Wi-Fi で `make up`（許可 CIDR を会場 IP に更新。ORM の Update + Apply で数分）
-- [ ] `make pf && make preflight`（イメージを全ノードにキャッシュさせる意味もある）
-- [ ] `make reset`
-
-**直前**
-- [ ] `make pf` が生きているか（`curl -s localhost:8080` / `localhost:3000`）
-- [ ] ターミナル 2 枚（デモ用 / Step 3 ログ用）、ブラウザ 1 枚（Grafana）
-
-## トラブル時の切り戻し
+## トラブルシューティング
 
 | 症状 | 対処 |
 |---|---|
@@ -163,13 +147,12 @@ Deploy ボタンで作った場合は、OCI コンソールの Resource Manager 
 | port-forward が切れる | `make pf` を再実行（スクリプトは切断時に自動で張り直す） |
 | LLMInferenceService が Ready にならない | `kubectl describe llmisvc -n llm-demo <name>` / `kubectl logs -n kserve deploy/llmisvc-controller-manager` |
 | Step 2 で差が出ない | 負荷開始から 1 分待つ。`make reset` で KV キャッシュを空にしてやり直す |
-| クラスタ全体が不調 | 録画（asciinema）と Grafana スナップショットに切り替えて説明を続ける |
 
 ---
 
 ## 調整済みパラメータと実測値
 
-concept.md §6.0 の初期値から、受け入れ基準を満たすよう次のとおり調整しました（2026-10-12、us-chicago-1 / E5.Flex 2 OCPU ×3）。
+シミュレーターと負荷のパラメータは、初期設計値から受け入れ基準を満たすよう次のとおり調整しました（2026-10-12、us-chicago-1 / E5.Flex 2 OCPU ×3）。
 
 | 項目 | 初期値 | 調整後 | 理由 |
 |---|---|---|---|
@@ -191,7 +174,7 @@ concept.md §6.0 の初期値から、受け入れ基準を満たすよう次の
 Step 3（P/D）: Prefill Pod（`--time-to-first-token 1500ms`）→ Decode Pod（KV 転送 100 ms）の順にログが出て、TTFT は約 1.6 秒。
 `prefill.replicas: 4` へのパッチで Prefill Pod だけ 2 → 4 台になり、Decode Pod は再作成されないことを確認しています。
 
-## 検証メモ（concept.md §11）
+## 検証メモ
 
 2026-10-12 に OKE v1.35.2（us-chicago-1）で検証した結果です。
 

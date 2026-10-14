@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 本番前の自己診断。Step 1〜3 を DEMO_AUTO=1 で一通り実行し、受け入れ基準（concept.md §10）を自動判定する。
+# 自己診断。Step 1〜3 を DEMO_AUTO=1 で一通り実行し、受け入れ基準を自動判定する。
 #   DEMO_AUTO=1 bash scripts/30-preflight.sh
 #   PREFLIGHT_LOAD_DURATION=240（Step 2 の負荷時間 秒）/ PREFLIGHT_KEEP=1（最後に reset しない）
 source "$(dirname "$0")/lib.sh"

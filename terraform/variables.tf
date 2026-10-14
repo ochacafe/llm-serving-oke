@@ -27,7 +27,7 @@ variable "kubernetes_version" {
 
 variable "admin_cidrs" {
   type        = list(string)
-  description = "Kubernetes API エンドポイントへのアクセスを許可する CIDR（発表者のグローバル IP/32 など）"
+  description = "Kubernetes API エンドポイントへのアクセスを許可する CIDR（利用者のグローバル IP/32 など）"
 
   validation {
     condition     = length(var.admin_cidrs) > 0 && alltrue([for c in var.admin_cidrs : can(cidrhost(c, 0))])

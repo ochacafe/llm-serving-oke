@@ -48,7 +48,7 @@ variables:
       type: string
       pattern: "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
     title: "Kubernetes API の許可 CIDR"
-    description: "Kubernetes API エンドポイントに接続する端末のグローバル IP（例: 203.0.113.10/32）。会場で IP が変わったらスタックを更新して再 Apply します。"
+    description: "Kubernetes API エンドポイントに接続する端末のグローバル IP（例: 203.0.113.10/32）。IP が変わったらスタックを更新して再 Apply します。"
     required: true
 
   kubernetes_version:
