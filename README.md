@@ -103,6 +103,59 @@ make reset       # デモ用リソースを消して Step 1 前に戻す
 ```
 
 各スクリプトは「コマンドを表示 → Enter で実行」形式です。`DEMO_AUTO=1` で Enter 待ちをスキップします。
+ターミナル 2 枚（デモ用 / Step 3 のログ用）とブラウザ（Grafana）を使います。
+事前に `make preflight` を一度通しておくと、全ノードにイメージがキャッシュされ、デモ中の Pod 起動が速くなります。
+
+### デモの流れ
+
+#### Step 1: YAML 1 枚から何ができるか（`make demo-1`、4〜5 分）
+
+1. `manifests/step1-baseline.yaml` を表示する（モデル名・レプリカ数 4・sim コンテナだけの `LLMInferenceService`）
+2. `kubectl apply` → Ready 待ち
+3. KServe が自動生成したリソース（Deployment / Service / HTTPRoute など）をツリー表示
+4. Gateway 経由で `curl` し、OpenAI 互換のレスポンスが返ることを確認
+5. 同じリクエストを 6 回送り、`x-inference-pod` ヘッダーで毎回別の Pod が応答する（普通の L7 LB で振り分けられている）ことを確認
+
+#### Step 2: 普通の LB と llm-d スケジューラの比較（`make demo-2`、7〜8 分）
+
+1. Step 1 との `diff` を表示（`router.scheduler` を足しただけ）
+2. 適用 → InferencePool と EPP（`sim-llmd-kserve-router-scheduler`）が増えたことをツリーで確認
+3. Grafana の比較ダッシュボード（`http://localhost:3000/d/routing`）を開く
+4. Enter で負荷開始。テナント 10 社分、各約 4,000 トークンのシステムプロンプトを付けたリクエストを、両方へ同時に送る（5 分間）
+
+ターミナルには左右 2 列のライブ画面が出ます（値は検証時の実測）。
+
+| 画面の項目 | 普通の LB（左） | llm-d（右） |
+|---|---|---|
+| TTFT p50 | 約 1,250 ms | 約 45 ms |
+| テナント × Pod の表 | 全マスに散らばる | 各テナントが 1 つの Pod に固まる |
+| Grafana のキャッシュヒット率 | 約 30% | 約 90% |
+
+最初の 30 秒ほどは両方ともキャッシュが空なので差が出ず、1 分ほどで差が開きます。
+llm-d は同じプロンプトの続きを、KV キャッシュを持っている Pod に送るため TTFT が短くなります。
+
+#### Step 3: Prefill / Decode 分離（`make demo-3`、5〜6 分）
+
+始める前に、2 枚目のターミナルで `make demo-3-logs` を流しておきます（EPP / Prefill / Decode のログ）。
+
+1. Step 2 との `diff` を表示（`prefill:` を足し、EPP の設定は KServe 既定の P/D 用に任せる）
+2. 適用 → Pod 一覧の ROLE 列で `prefill` ×2 と `decode` ×2 に分かれていることを確認
+3. Decode Pod のコンテナ一覧に `llm-d-routing-sidecar` が自動で注入されていることを確認
+4. 1 リクエストずつ 3 回送る。ログ側に次の順で行が出る
+   - EPP が受信
+   - Prefill Pod が受信（約 1.5 秒）
+   - Decode Pod が受信 → 完了
+
+   リクエスト ID は EPP のログにしか出ないため、時刻の並びで Prefill → Decode のリレーを確認します。
+5. `kubectl patch` で `prefill.replicas` を 4 にする。Prefill Pod だけが 2 → 4 台に増え、Decode Pod は作り直されない。
+   入力が長いワークロードでは Prefill だけを増強できる、という点を示します。
+   Grafana の P/D ダッシュボード（`http://localhost:3000/d/pd`）では、ロール別の Pod 数の線が変わります。
+
+#### 締め（`make demo-diff`、1 分）
+
+Step 1 → 2 → 3 の差分を続けて表示します。単体の vLLM 相当から P/D 分離クラスタまで、YAML の差分はこれだけです。
+
+もう一度最初から行う場合は `make reset` で Step 1 前の状態に戻します。
 
 ### loadgen はクラスタ内で動かす
 
