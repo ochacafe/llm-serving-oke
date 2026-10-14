@@ -2,6 +2,7 @@
 # Step 3: prefill を書き足して P/D 分離
 #   ログは別ペインで: bash scripts/demo-step3.sh logs
 source "$(dirname "$0")/lib.sh"
+delegate_to_operator "$0" "$@"
 require_kubeconfig
 cd "${REPO_ROOT}"
 

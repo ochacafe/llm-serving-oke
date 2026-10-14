@@ -1,21 +1,13 @@
 #!/usr/bin/env bash
-# OKE クラスタを OCI Resource Manager (ORM) で作成/更新し、kubeconfig を生成する。
+# OKE クラスタと踏み台（bastion / operator）を OCI Resource Manager (ORM) で作成/更新し、
+# operator 上で kubeconfig を生成する。
 #
-#   bash scripts/10-infra-up.sh                    # ORM スタック作成(or 更新) → Apply → kubeconfig
-#   bash scripts/10-infra-up.sh --cluster-id <id>  # 既存クラスタの kubeconfig だけ作る
+#   bash scripts/10-infra-up.sh   # ORM スタック作成(or 更新) → Apply → SSH 設定 → operator 初期化
 #
 # 必要な環境変数（.env でも可）: OCI_COMPARTMENT_OCID
-# 任意: OCI_CLI_PROFILE(DEFAULT) / ADMIN_CIDRS(未設定なら自 IP/32 を自動検出) / CLUSTER_NAME / OKE_CLUSTER_ID
+# 任意: OCI_CLI_PROFILE(DEFAULT) / ADMIN_CIDRS(未設定なら自 IP/32 を自動検出) / CLUSTER_NAME / SSH_KEY_PATH
 source "$(dirname "$0")/lib.sh"
-need oci kubectl jq zip curl
-
-CLUSTER_ID="${OKE_CLUSTER_ID:-}"
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --cluster-id) CLUSTER_ID="$2"; shift 2 ;;
-    *) die "不明な引数: $1" ;;
-  esac
-done
+need oci jq zip curl ssh ssh-keygen tar
 
 mkdir -p "${STATE_DIR}"
 
@@ -42,14 +34,16 @@ find_stack_id() {
 orm_apply() {
   [[ -n "${OCI_COMPARTMENT_OCID:-}" ]] || die "OCI_COMPARTMENT_OCID が未設定です（.env.example 参照）"
 
-  local cidrs vars zip stack_id job_id state tenancy region
+  local cidrs vars zip stack_id job_id state tenancy region pubkey
   tenancy="$(oci_profile_value tenancy)"
   region="$(oci_profile_value region)"
   [[ -n "${tenancy}" && -n "${region}" ]] || die "OCI CLI プロファイル ${OCI_CLI_PROFILE} から tenancy / region を取得できません"
   info "OCI プロファイル: ${OCI_CLI_PROFILE}（region: ${region}）"
   cidrs="$(detect_admin_cidrs)"
-  info "Kubernetes API の許可 CIDR: ${cidrs}"
-  # ORM コンソールでは tenancy_ocid / region が自動入力されるが、CLI/API では明示的に渡す必要がある
+  info "踏み台への SSH を許可する CIDR: ${cidrs}"
+  ensure_ssh_key
+  pubkey="$(cat "${SSH_KEY_PATH}.pub")"
+  # ORM の CLI/API では tenancy_ocid / region を明示的に渡す必要がある
   vars="$(jq -n \
     --arg t "${tenancy}" \
     --arg r "${region}" \
@@ -57,12 +51,14 @@ orm_apply() {
     --arg cidrs "${cidrs}" \
     --arg name "${CLUSTER_NAME:-llm-demo}" \
     --arg kv "${KUBERNETES_VERSION}" \
+    --arg key "${pubkey}" \
     '{tenancy_ocid: $t,
       region: $r,
       compartment_ocid: $c,
       admin_cidrs: ($cidrs | split(",") | map(gsub("\\s"; "")) | tojson),
       cluster_name: $name,
-      kubernetes_version: $kv}')"
+      kubernetes_version: $kv,
+      ssh_public_key: $key}')"
   echo "${vars}" > "${STATE_DIR}/stack-variables.json"
 
   zip="$(bash "${REPO_ROOT}/scripts/build-stack-zip.sh" "${STATE_DIR}/stack.zip")"
@@ -108,30 +104,31 @@ orm_apply() {
     esac
   done
 
-  CLUSTER_ID="$(oci resource-manager job-output-summary list-job-outputs --job-id "${job_id}" --all \
-    --query 'data.items[?"output-name"==`cluster_id`]."output-value" | [0]' --raw-output)"
-  [[ -n "${CLUSTER_ID}" && "${CLUSTER_ID}" != "null" ]] || die "cluster_id 出力を取得できません"
+  oci resource-manager job-output-summary list-job-outputs --job-id "${job_id}" --all \
+    --query 'data.items[].{k:"output-name",v:"output-value"}' >"${STATE_DIR}/outputs.json"
 }
 
-if [[ -z "${CLUSTER_ID}" ]]; then
-  orm_apply
-fi
+output_value() {
+  jq -r --arg k "$1" '.[] | select(.k == $k) | .v' "${STATE_DIR}/outputs.json"
+}
+
+orm_apply
+CLUSTER_ID="$(output_value cluster_id)"
+BASTION_IP="$(output_value bastion_public_ip)"
+OPERATOR_IP="$(output_value operator_private_ip)"
+[[ -n "${CLUSTER_ID}" && -n "${BASTION_IP}" && -n "${OPERATOR_IP}" ]] || die "ORM の出力（cluster_id / bastion_public_ip / operator_private_ip）を取得できません"
 echo "${CLUSTER_ID}" > "${STATE_DIR}/cluster_id"
 ok "cluster_id: ${CLUSTER_ID}"
 
-info "kubeconfig を生成します: ${KUBECONFIG}"
-rm -f "${KUBECONFIG}"
-oci ce cluster create-kubeconfig \
-  --cluster-id "${CLUSTER_ID}" \
-  --file "${KUBECONFIG}" \
-  --token-version 2.0.0 \
-  --kube-endpoint PUBLIC_ENDPOINT \
-  --profile "${OCI_CLI_PROFILE}" >/dev/null
-chmod 600 "${KUBECONFIG}"
+info "SSH 設定を書き出します: ${SSH_CONFIG}（bastion ${BASTION_IP} → operator ${OPERATOR_IP}）"
+write_ssh_config "${BASTION_IP}" "${OPERATOR_IP}"
+op_reachable() { op_ssh -o ConnectTimeout=10 -o BatchMode=yes true; }
+wait_until 600 "operator に SSH 接続できる" op_reachable
+info "operator の初期化（cloud-init: kubectl / helm / OCI CLI の導入）を待ちます"
+op_ssh "sudo cloud-init status --wait >/dev/null; sudo cloud-init status"
 
-EXPECTED_NODES="${WORKER_COUNT:-3}"
-ready_nodes() {
-  [[ "$(kubectl get nodes --no-headers 2>/dev/null | awk '$2=="Ready"' | wc -l | tr -d ' ')" -ge "${EXPECTED_NODES}" ]]
-}
-wait_until 900 "${EXPECTED_NODES} ノード Ready" ready_nodes
-kubectl get nodes -o wide
+info "operator にリポジトリを同期し、kubeconfig を生成します"
+sync_repo
+op_ssh "cd ~/${OPERATOR_REPO_DIR} && WORKER_COUNT=${WORKER_COUNT:-3} bash scripts/operator-init.sh ${CLUSTER_ID}"
+
+ok "完了。次: make platform（operator 上で実行されます）。operator に入る場合: make ssh"

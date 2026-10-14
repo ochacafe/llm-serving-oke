@@ -3,7 +3,7 @@
 #   bash scripts/90-infra-down.sh          # 確認あり
 #   FORCE=1 bash scripts/90-infra-down.sh  # 確認なし
 source "$(dirname "$0")/lib.sh"
-need oci jq
+need oci jq ssh
 
 stack_id=""
 [[ -f "${STATE_DIR}/stack_id" ]] && stack_id="$(cat "${STATE_DIR}/stack_id")"
@@ -19,11 +19,12 @@ if [[ "${FORCE:-0}" != "1" ]]; then
   [[ "${ans}" == "y" || "${ans}" == "Y" ]] || die "中止しました"
 fi
 
-# LoadBalancer Service が残っていると VCN のサブネット削除が失敗するため、先に消す
-if [[ -f "${KUBECONFIG}" ]] && kubectl version --request-timeout=10s >/dev/null 2>&1; then
-  info "type=LoadBalancer の Service を削除します"
-  kubectl get svc -A -o json | jq -r '.items[] | select(.spec.type=="LoadBalancer") | "\(.metadata.namespace) \(.metadata.name)"' |
-    while read -r ns name; do kubectl delete svc -n "${ns}" "${name}" --wait=true; done
+# LoadBalancer Service が残っていると VCN のサブネット削除が失敗するため、先に消す（operator 経由・失敗しても続行）
+if [[ -f "${SSH_CONFIG}" ]]; then
+  info "type=LoadBalancer の Service を削除します（operator 経由）"
+  op_ssh -o ConnectTimeout=15 "cd ~/${OPERATOR_REPO_DIR} 2>/dev/null && export KUBECONFIG=\$PWD/kubeconfig && \
+    kubectl get svc -A -o jsonpath='{range .items[?(@.spec.type==\"LoadBalancer\")]}{.metadata.namespace} {.metadata.name}{\"\\n\"}{end}' |
+    while read -r ns name; do [ -n \"\$name\" ] && kubectl delete svc -n \"\$ns\" \"\$name\" --wait=true; done" || warn "operator に接続できないためスキップしました"
 fi
 
 info "Destroy ジョブを実行します"

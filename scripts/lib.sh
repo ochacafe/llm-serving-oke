@@ -23,6 +23,17 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
 fi
 
 export OCI_CLI_PROFILE="${OCI_CLI_PROFILE:-DEFAULT}"
+
+# operator インスタンス上で動いているか（10-infra-up.sh がリポジトリ同期時に目印を置く）。
+# operator 上では OCI CLI をインスタンス・プリンシパルで認証する（鍵をインスタンスに置かない）。
+if [[ -f "${HOME}/.llm-demo-operator" ]]; then
+  export ON_OPERATOR=1
+  export OCI_CLI_AUTH=instance_principal
+  unset OCI_CLI_PROFILE
+else
+  export ON_OPERATOR=0
+fi
+
 export KUBECONFIG="${KUBECONFIG_OVERRIDE:-${REPO_ROOT}/kubeconfig}"
 export STATE_DIR="${REPO_ROOT}/.state"
 export DEMO_NS="llm-demo"
@@ -136,7 +147,7 @@ fi
 ensure_loadgen() {
   [[ "${LOADGEN_MODE}" == "cluster" ]] || return 0
   local src="${REPO_ROOT}/loadgen" hash
-  hash="$(cat "${src}/pyproject.toml" "${src}/uv.lock" "${src}"/src/loadgen/*.py | shasum | cut -c1-16)"
+  hash="$(cat "${src}/pyproject.toml" "${src}/uv.lock" "${src}"/src/loadgen/*.py | { sha256sum 2>/dev/null || shasum -a 256; } | cut -c1-16)"
   kubectl create namespace loadgen --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   kubectl create configmap loadgen-src -n loadgen \
     --from-file="${src}/pyproject.toml" --from-file="${src}/uv.lock" \
@@ -183,6 +194,77 @@ oci_profile_value() {
       k = kv[1]; gsub(/[ \t]+$/, "", k)
       if (k == key) { v = substr(line, index(line, "=") + 1); gsub(/^[ \t]+|[ \t]+$/, "", v); print v; exit }
     }' "${cfg}"
+}
+
+# ---- 踏み台（bastion）→ operator ----
+# Kubernetes API はプライベートなので、kubectl / helm は operator 上で実行する。
+# 手元で実行したスクリプトは delegate_to_operator で operator に委譲される。
+export SSH_KEY_PATH="${SSH_KEY_PATH:-${HOME}/.ssh/llm-serving-oke}"
+export SSH_CONFIG="${STATE_DIR}/ssh_config"
+export OPERATOR_REPO_DIR="llm-serving-oke"
+
+# このデモ専用の SSH 鍵（無ければ作る）。公開鍵は ORM のスタック変数としてのみ渡す
+ensure_ssh_key() {
+  if [[ ! -f "${SSH_KEY_PATH}" ]]; then
+    info "SSH 鍵を作成します: ${SSH_KEY_PATH}"
+    ssh-keygen -q -t ed25519 -N "" -C "llm-serving-oke" -f "${SSH_KEY_PATH}"
+  fi
+}
+
+write_ssh_config() { # write_ssh_config <bastion_public_ip> <operator_private_ip>
+  mkdir -p "${STATE_DIR}"
+  cat >"${SSH_CONFIG}" <<CFG
+Host llm-demo-bastion
+  HostName $1
+  User opc
+  IdentityFile ${SSH_KEY_PATH}
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
+  UserKnownHostsFile ${STATE_DIR}/known_hosts
+  ServerAliveInterval 30
+
+Host llm-demo-operator
+  HostName $2
+  User opc
+  ProxyJump llm-demo-bastion
+  IdentityFile ${SSH_KEY_PATH}
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
+  UserKnownHostsFile ${STATE_DIR}/known_hosts
+  ServerAliveInterval 30
+CFG
+}
+
+op_ssh() {
+  [[ -f "${SSH_CONFIG}" ]] || die "SSH 設定がありません（${SSH_CONFIG}）。先に make up を実行してください。"
+  ssh -F "${SSH_CONFIG}" llm-demo-operator "$@"
+}
+
+# デモに必要なファイルだけ operator に同期する（.env / kubeconfig / .state などは送らない）
+sync_repo() {
+  ( cd "${REPO_ROOT}" &&
+    COPYFILE_DISABLE=1 tar czf - --exclude 'loadgen/.venv' --exclude '__pycache__' \
+      Makefile versions.env scripts manifests platform loadgen ) |
+    op_ssh "mkdir -p ~/${OPERATOR_REPO_DIR} && tar xzf - -C ~/${OPERATOR_REPO_DIR} 2>/dev/null && touch ~/.llm-demo-operator"
+}
+
+# 手元で呼ばれたら operator に同期して同じスクリプトを実行し、終了する
+#   delegate_to_operator "$0" "$@"
+delegate_to_operator() {
+  [[ "${ON_OPERATOR}" == "1" ]] && return 0
+  local script rel tty_flag="" env_args=""
+  script="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"; shift
+  rel="${script#"${REPO_ROOT}"/}"
+  sync_repo
+  [[ -t 0 && -t 1 ]] && tty_flag="-t"
+  local v
+  for v in DEMO_AUTO LOADGEN_MODE LOADGEN_DURATION LOADGEN_RPS LOADGEN_TENANTS LOADGEN_PROMPT_TOKENS LOADGEN_EXTRA \
+           PD_SINGLE_COUNT PREFLIGHT_LOAD_DURATION PREFLIGHT_KEEP WORKER_COUNT FORCE; do
+    [[ -n "${!v:-}" ]] && env_args+=" ${v}=$(printf '%q' "${!v}")"
+  done
+  # shellcheck disable=SC2029
+  exec ssh -F "${SSH_CONFIG}" ${tty_flag} llm-demo-operator \
+    "cd ~/${OPERATOR_REPO_DIR} && env${env_args} bash ${rel} $(printf '%q ' "$@")"
 }
 
 stack_display_name() {

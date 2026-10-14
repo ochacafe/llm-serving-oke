@@ -4,6 +4,7 @@
 # 順序が重要（GIE CRD は KServe チャートの後、agentgateway は GIE CRD の後）。
 # OKE (K8s >= 1.34) の CRI-O は short name のイメージ（kserve/xxx）を拒否するため、docker.io/ を明示する。
 source "$(dirname "$0")/lib.sh"
+delegate_to_operator "$0" "$@"
 need kubectl helm openssl
 require_kubeconfig
 

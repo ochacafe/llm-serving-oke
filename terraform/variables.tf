@@ -27,12 +27,17 @@ variable "kubernetes_version" {
 
 variable "admin_cidrs" {
   type        = list(string)
-  description = "Kubernetes API エンドポイントへのアクセスを許可する CIDR（利用者のグローバル IP/32 など）"
+  description = "踏み台（bastion）への SSH を許可する CIDR（利用者のグローバル IP/32 など）"
 
   validation {
     condition     = length(var.admin_cidrs) > 0 && alltrue([for c in var.admin_cidrs : can(cidrhost(c, 0))])
     error_message = "admin_cidrs には 1 つ以上の有効な CIDR（例: 203.0.113.10/32）を指定してください。"
   }
+}
+
+variable "ssh_public_key" {
+  type        = string
+  description = "bastion / operator に登録する SSH 公開鍵（OpenSSH 形式）"
 }
 
 variable "worker_count" {

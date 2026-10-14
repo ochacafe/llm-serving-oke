@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Step 1: YAML 1 枚から何が自動生成されるか（KServe）
 source "$(dirname "$0")/lib.sh"
+delegate_to_operator "$0" "$@"
 require_kubeconfig
 cd "${REPO_ROOT}"
 

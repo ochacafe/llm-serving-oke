@@ -8,13 +8,16 @@ help: ## このヘルプ
 check: ## 前提ツール / OCI CLI 設定の確認
 	bash scripts/00-check-prereqs.sh
 
-up: ## OKE を ORM で作成/更新し kubeconfig を生成（CLUSTER_ID=... で既存クラスタに接続のみ）
-	bash scripts/10-infra-up.sh $(if $(CLUSTER_ID),--cluster-id $(CLUSTER_ID),)
+up: ## OKE と踏み台を ORM で作成/更新し、operator を初期化
+	bash scripts/10-infra-up.sh
+
+ssh: ## operator インスタンスにログイン（kubectl / helm / k9s / stern が使える）
+	bash -c 'source scripts/lib.sh; sync_repo; exec ssh -F "$$SSH_CONFIG" -t llm-demo-operator "cd ~/llm-serving-oke && exec bash -l"'
 
 platform: ## KServe / agentgateway / 監視を導入（冪等）
 	bash scripts/20-platform-install.sh
 
-pf: ## gateway:8080 / grafana:3000 / prometheus:9090 を port-forward
+pf: ## gateway:8080 / grafana:3000 / prometheus:9090 を手元に転送（operator 経由）
 	bash scripts/port-forward.sh start
 
 pf-stop: ## port-forward を停止
@@ -47,4 +50,4 @@ down: ## ORM Destroy でクラスタ / VCN を削除
 stack-zip: ## ORM 用 stack.zip を作成
 	bash scripts/build-stack-zip.sh
 
-.PHONY: help check up platform pf pf-stop preflight demo-1 demo-2 demo-3 demo-3-logs demo-diff reset down stack-zip
+.PHONY: help check up ssh platform pf pf-stop preflight demo-1 demo-2 demo-3 demo-3-logs demo-diff reset down stack-zip

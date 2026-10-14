@@ -1,6 +1,6 @@
 title: "vLLM / llm-d / KServe demo on OKE"
 description: "llm-d-inference-sim を使った LLM サービングデモ用の OKE クラスタ（CPU ノードのみ）を作成します。"
-informationalText: "Apply 完了後、出力の cluster_id を使って手元で scripts/10-infra-up.sh --cluster-id <cluster_id> → scripts/20-platform-install.sh を実行してください。"
+informationalText: "クラスタの操作は operator インスタンス上で行います（手元からは scripts/10-infra-up.sh が SSH 設定まで行います）。"
 schemaVersion: 1.1.0
 version: "20261012"
 locale: "en"
@@ -20,6 +20,7 @@ variableGroups:
   - title: "Access"
     variables:
       - admin_cidrs
+      - ssh_public_key
 
   - title: "Cluster"
     variables:
@@ -47,8 +48,14 @@ variables:
     items:
       type: string
       pattern: "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
-    title: "Kubernetes API の許可 CIDR"
-    description: "Kubernetes API エンドポイントに接続する端末のグローバル IP（例: 203.0.113.10/32）。IP が変わったらスタックを更新して再 Apply します。"
+    title: "踏み台への SSH を許可する CIDR"
+    description: "踏み台（bastion）に SSH する端末のグローバル IP（例: 203.0.113.10/32）。IP が変わったらスタックを更新して再 Apply します。"
+    required: true
+
+  ssh_public_key:
+    type: oci:core:ssh:publickey
+    title: "SSH 公開鍵"
+    description: "bastion / operator に登録する公開鍵"
     required: true
 
   kubernetes_version:
@@ -106,6 +113,12 @@ outputs:
   cluster_id:
     type: ocid
     title: "OKE cluster OCID"
-  kubeconfig_command:
+  bastion_public_ip:
+    type: string
+    title: "bastion のパブリック IP"
+  operator_private_ip:
+    type: string
+    title: "operator のプライベート IP"
+  ssh_to_operator:
     type: copyableString
-    title: "kubeconfig 生成コマンド"
+    title: "operator への SSH コマンド"

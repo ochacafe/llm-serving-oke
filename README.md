@@ -13,12 +13,21 @@ OCI Container Engine for Kubernetes (OKE) の CPU ノードだけで動きます
 | 締め | `diff` で Step 1 → 2 → 3 の差分 | — |
 
 ```
-手元の端末 ──port-forward 8080──▶ agentgateway (Gateway: kserve-ingress-gateway)
-                                     ├─ HTTPRoute ─▶ Service ─▶ sim-baseline ×4      (P2C)
-                                     ├─ HTTPRoute ─▶ InferencePool ─▶ EPP ─▶ sim-llmd ×4
-                                     └─ HTTPRoute ─▶ InferencePool ─▶ EPP ─▶ sim-pd (prefill ×2 / decode ×2 + routing sidecar)
-            ──port-forward 3000──▶ Grafana ◀── Prometheus（Pod アノテーションで 5 秒間隔 scrape）
+手元の端末 ──SSH(22)──▶ bastion（公開サブネット）──SSH──▶ operator（プライベート、kubectl / helm / OCI CLI）
+                                                              │ プライベート API エンドポイント
+                                                              ▼
+                     OKE ── agentgateway (Gateway: kserve-ingress-gateway)
+                              ├─ HTTPRoute ─▶ Service ─▶ sim-baseline ×4      (P2C)
+                              ├─ HTTPRoute ─▶ InferencePool ─▶ EPP ─▶ sim-llmd ×4
+                              └─ HTTPRoute ─▶ InferencePool ─▶ EPP ─▶ sim-pd (prefill ×2 / decode ×2 + routing sidecar)
+                          Grafana ◀── Prometheus（Pod アノテーションで 5 秒間隔 scrape）
+
+手元のブラウザ ──SSH トンネル──▶ operator ──port-forward──▶ Grafana :3000 / Gateway :8080
 ```
+
+Kubernetes API はプライベートで、クラスタの操作はすべて operator インスタンス上で行います。
+`make` は手元で打てば、スクリプトが operator にリポジトリを同期して SSH 越しに実行します。
+手元から出ていく通信は SSH（22）と HTTPS（443）だけなので、送信ポートが制限されたネットワークでも使えます。
 
 ---
 
@@ -26,7 +35,7 @@ OCI Container Engine for Kubernetes (OKE) の CPU ノードだけで動きます
 
 | パス | 内容 |
 |---|---|
-| `terraform/` | OKE（Basic / flannel / E5.Flex ×3）を作る **OCI Resource Manager スタック**（`schema.yaml` 付き） |
+| `terraform/` | OKE（Basic / flannel / E5.Flex ×3）と踏み台（bastion / operator）を作る **OCI Resource Manager スタック** |
 | `platform/` | Gateway、kube-prometheus-stack の values、Grafana ダッシュボード 2 枚 |
 | `manifests/` | Step 1〜3 の `LLMInferenceService` |
 | `loadgen/` | デモ専用の負荷生成ツール（Python / uv）。`k8s.yaml` はクラスタ内実行用 Pod |
@@ -41,52 +50,54 @@ OCI Container Engine for Kubernetes (OKE) の CPU ノードだけで動きます
 |---|---|
 | OCI 認証・リージョン | 各自の `~/.oci/config`（`OCI_CLI_PROFILE`、既定 `DEFAULT`） |
 | コンパートメント OCID / 許可 CIDR | 環境変数 or `.env`（`.gitignore` 済み。雛形は `.env.example`） |
+| SSH 鍵 | `~/.ssh/llm-serving-oke`（初回に自動生成。公開鍵だけを ORM のスタック変数で渡す） |
+| operator の OCI 認証 | インスタンス・プリンシパル（operator 1 台だけを対象にした動的グループとポリシー）。インスタンスに API キーを置かない |
 | Terraform state | OCI Resource Manager が管理（手元に tfstate を作らない） |
-| ORM スタック ID 等 | `.state/`（`.gitignore` 済み） |
-| kubeconfig | `./kubeconfig`（`.gitignore` 済み。トークンは OCI CLI が都度発行） |
+| ORM スタック ID・SSH 設定 | `.state/`（`.gitignore` 済み） |
+| kubeconfig | operator 上の `~/llm-serving-oke/kubeconfig`（トークンはインスタンス・プリンシパルで都度発行） |
 | Grafana 管理者パスワード | クラスタ内でランダム生成した Secret のみ（匿名閲覧 ON なので通常は不要） |
 
-Kubernetes API エンドポイントは利用者の IP（`admin_cidrs`）だけに開放し、Gateway / Grafana は LoadBalancer を作らず port-forward でのみアクセスします。
+Kubernetes API エンドポイントはプライベート、bastion への SSH は利用者の IP（`admin_cidrs`）だけに開放します。
+Gateway / Grafana は LoadBalancer を作らず、operator 上の port-forward と SSH トンネルでのみアクセスします。
 CI（`.github/workflows/ci.yml`）で gitleaks と OCID 混入チェックを実行します。
 
 ---
 
 ## 前提
 
-- OCI テナンシ（`VM.Standard.E5.Flex` を 6 OCPU 使えること）と、OKE / VCN を作成できるコンパートメント
-- 手元: `oci`（設定済みプロファイル）, `kubectl`, `helm`, `jq`, `curl`, `zip`, `openssl`, [`uv`](https://docs.astral.sh/uv/)
-- 任意: `stern`, `bat`, `delta`, `kubectl tree`（krew）。無ければフォールバック表示
+- OCI テナンシ（`VM.Standard.E5.Flex` をワーカー 6 + bastion 1 + operator 1 の計 8 OCPU 使えること）と、OKE / VCN / インスタンスを作成できるコンパートメント
+- 実行ユーザーが **動的グループ（テナンシ直下）とポリシー（対象コンパートメント）を作成できる IAM 権限**（operator のインスタンス・プリンシパル用）
+- 手元: `oci`（設定済みプロファイル）, `jq`, `curl`, `zip`, `ssh`, `tar`。kubectl / helm / stern / k9s は operator に自動で入る
+- 任意: [`uv`](https://docs.astral.sh/uv/)（loadgen を手元で動かす `LOADGEN_MODE=local` の場合のみ）
 
 ```bash
 cp .env.example .env   # OCI_COMPARTMENT_OCID を設定
 make check             # = bash scripts/00-check-prereqs.sh
 ```
 
-## 1. OKE を作る（OCI Resource Manager）
+## 1. OKE と踏み台を作る（OCI Resource Manager）
 
 ```bash
 make up                # = bash scripts/10-infra-up.sh
 ```
 
 1. 手元のグローバル IP を検出して `admin_cidrs` にする（`ADMIN_CIDRS=1.2.3.4/32,...` で上書き可）
-2. `terraform/` から `stack.zip` を作り、ORM スタックを作成（2 回目以降は更新）
-3. ORM の Apply ジョブを実行（初回 15〜20 分）
-4. 出力の `cluster_id` から `./kubeconfig` を生成し、ノード Ready を待つ
+2. SSH 鍵 `~/.ssh/llm-serving-oke` が無ければ作る（`SSH_KEY_PATH` で変更可）
+3. `terraform/` から `stack.zip` を作り、ORM スタックを作成（2 回目以降は更新）
+4. ORM の Apply ジョブを実行（初回 20 分前後）
+5. `.state/ssh_config` に bastion → operator の SSH 設定を書き出し、operator の初期化（cloud-init）を待つ
+6. operator にリポジトリを同期し、インスタンス・プリンシパルで kubeconfig を作ってノード Ready を待つ
 
 リージョンは OCI CLI プロファイルのものを使います（コードにリージョン名は持たせていません）。
 **手元のグローバル IP が変わったら `make up` を再実行**すれば許可 CIDR だけ更新されます。
 
-既存の OKE クラスタを使う場合は、kubeconfig の生成だけ行えます。
-
-```bash
-bash scripts/10-infra-up.sh --cluster-id <cluster_id>
-```
+operator に直接入って kubectl / k9s / stern を使う場合は `make ssh` です。
 
 ## 2. プラットフォームを入れる
 
 ```bash
 make platform   # = bash scripts/20-platform-install.sh（冪等）
-make pf         # = bash scripts/port-forward.sh（gateway:8080 / grafana:3000 / prometheus:9090）
+make pf         # = bash scripts/port-forward.sh（operator 上で port-forward + 手元へ SSH トンネル）
 ```
 
 Gateway API CRD → cert-manager → KServe(LLMInferenceService) → GIE CRD → agentgateway → Gateway → kube-prometheus-stack の順に入れます（順序が重要）。
@@ -104,6 +115,7 @@ make reset       # デモ用リソースを消して Step 1 前に戻す
 
 各スクリプトは「コマンドを表示 → Enter で実行」形式です。`DEMO_AUTO=1` で Enter 待ちをスキップします。
 ターミナル 2 枚（デモ用 / Step 3 のログ用）とブラウザ（Grafana）を使います。
+`make demo-*` は手元で打つと operator 上で実行され（SSH 越しの対話実行）、Grafana は `make pf` の SSH トンネル経由で手元のブラウザから開けます。
 事前に `make preflight` を一度通しておくと、全ノードにイメージがキャッシュされ、デモ中の Pod 起動が速くなります。
 
 ### デモの流れ
@@ -183,8 +195,9 @@ make down        # = bash scripts/90-infra-down.sh（ORM Destroy → スタッ�
 
 | 症状 | 対処 |
 |---|---|
-| `kubectl` がタイムアウト | IP が変わった可能性。`make up` で許可 CIDR を更新 |
-| port-forward が切れる | `make pf` を再実行（スクリプトは切断時に自動で張り直す） |
+| `make` が SSH 接続できない | 手元の IP が変わった可能性。`make up` で許可 CIDR を更新 |
+| operator で `kubectl` が認可エラー | 動的グループ / ポリシーの反映待ち（数分）。`make up` を再実行すると kubeconfig 生成を再試行する |
+| Grafana が開けない | `make pf` を再実行（operator 側の port-forward は切断時に自動で張り直し、手元の SSH トンネルも張り直す） |
 | LLMInferenceService が Ready にならない | `kubectl describe llmisvc -n llm-demo <name>` / `kubectl logs -n kserve deploy/llmisvc-controller-manager` |
 | Step 2 で差が出ない | 負荷開始から 1 分待つ。`make reset` で KV キャッシュを空にしてやり直す |
 

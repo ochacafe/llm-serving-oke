@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # デモ用リソース（LLMInferenceService）だけ消して Step 1 前の状態に戻す
 source "$(dirname "$0")/lib.sh"
+delegate_to_operator "$0" "$@"
 need kubectl
 require_kubeconfig
 info "llm-demo の LLMInferenceService を削除します"

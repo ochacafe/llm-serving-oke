@@ -2,6 +2,7 @@
 # Step 2: 普通の L7 LB（P2C） vs llm-d のスケジューラ（prefix cache 考慮）
 #   LOADGEN_DURATION=300 LOADGEN_RPS=4 で負荷を調整
 source "$(dirname "$0")/lib.sh"
+delegate_to_operator "$0" "$@"
 require_kubeconfig
 cd "${REPO_ROOT}"
 

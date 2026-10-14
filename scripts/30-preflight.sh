@@ -3,6 +3,7 @@
 #   DEMO_AUTO=1 bash scripts/30-preflight.sh
 #   PREFLIGHT_LOAD_DURATION=240（Step 2 の負荷時間 秒）/ PREFLIGHT_KEEP=1（最後に reset しない）
 source "$(dirname "$0")/lib.sh"
+delegate_to_operator "$0" "$@"
 need kubectl jq curl
 require_kubeconfig
 cd "${REPO_ROOT}"
