@@ -5,8 +5,6 @@
 推論エンジンは GPU 不要の vLLM 互換シミュレーター [llm-d-inference-sim](https://github.com/llm-d/llm-d-inference-sim) を使い、
 OCI Container Engine for Kubernetes (OKE) の CPU ノードだけで動きます。
 
-[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/ochacafe/llm-serving-oke/releases/latest/download/stack.zip)
-
 | Step | 見せること | 書き足す YAML |
 |---|---|---|
 | 1 | YAML 1 枚から Deployment / Service / HTTPRoute が自動生成される | — |
@@ -66,8 +64,6 @@ make check             # = bash scripts/00-check-prereqs.sh
 
 ## 1. OKE を作る（OCI Resource Manager）
 
-### A. スクリプトから（推奨）
-
 ```bash
 make up                # = bash scripts/10-infra-up.sh
 ```
@@ -80,18 +76,11 @@ make up                # = bash scripts/10-infra-up.sh
 リージョンは OCI CLI プロファイルのものを使います（コードにリージョン名は持たせていません）。
 **手元のグローバル IP が変わったら `make up` を再実行**すれば許可 CIDR だけ更新されます。
 
-### B. Deploy to OCI ボタンから
-
-1. 上の **Deploy to Oracle Cloud** ボタン → OCI コンソールでリージョンを選ぶ（例: US Midwest (Chicago)）
-2. コンパートメントと「Kubernetes API の許可 CIDR」（自分のグローバル IP/32）を入力して作成 → **Apply**
-3. 完了後、Outputs の `cluster_id` で kubeconfig を作成
+既存の OKE クラスタを使う場合は、kubeconfig の生成だけ行えます。
 
 ```bash
 bash scripts/10-infra-up.sh --cluster-id <cluster_id>
 ```
-
-> ボタンは GitHub Release の `stack.zip` を参照します。`v*` タグを push すると
-> `.github/workflows/release-stack.yml` が `terraform/` から `stack.zip` を作って Release に添付します。
 
 ## 2. プラットフォームを入れる
 
@@ -134,8 +123,6 @@ bash -c 'source scripts/lib.sh; ensure_loadgen; loadgen compare \
 ```bash
 make down        # = bash scripts/90-infra-down.sh（ORM Destroy → スタック削除）
 ```
-
-Deploy ボタンで作った場合は、OCI コンソールの Resource Manager からスタックを **Destroy** → 削除してください。
 
 ---
 
@@ -189,7 +176,7 @@ Step 3（P/D）: Prefill Pod（`--time-to-first-token 1500ms`）→ Decode Pod�
 | 7 | リクエスト ID がログに出るか | `x-request-id` は EPP のログにだけ出る。sim は独自 ID を振るため、**Prefill / Decode のログは時刻順で対応付けて見せる**。routing sidecar は既定の詳細度ではリクエストログを出さない |
 | 8 | Gateway の Service が LoadBalancer を作るか | `AgentgatewayParameters` で `type: ClusterIP` を指定し、LB が作られないことを確認（未指定時の既定動作は未検証） |
 | 9 | terraform-oci-oke v5.5.1 の変数名 | `cluster_type` / `cni_type` / `control_plane_is_public` / `control_plane_allowed_cidrs` / `create_bastion` / `create_operator` / `create_iam_resources` / `worker_pools` / `load_balancers` で確認。`subnets` で未使用サブネット（bastion / operator / int_lb / pods）を作らない |
-| 9b | リージョンを持たない構成で `oci.home` を満たせるか | `oci_identity_region_subscriptions`（`is_home_region`）でホームリージョンを動的に解決（モジュール同梱の ORM サンプルと同じ方式）。ORM コンソールは `tenancy_ocid` / `region` を自動入力するが、**CLI/API でスタックを作る場合は明示が必要**なので `10-infra-up.sh` が OCI CLI プロファイルから渡す |
+| 9b | リージョンを持たない構成で `oci.home` を満たせるか | `oci_identity_region_subscriptions`（`is_home_region`）でホームリージョンを動的に解決（モジュール同梱の ORM サンプルと同じ方式）。ORM の CLI/API でスタックを作る場合は `tenancy_ocid` / `region` の明示が必要なので `10-infra-up.sh` が OCI CLI プロファイルから渡す |
 | 10 | amd64 での各イメージ | sim / EPP（`llm-d-router-endpoint-picker:v0.9.0`）/ disagg-sidecar（v0.9.0）とも E5.Flex で起動 |
 | 11 | kube-prometheus-stack | `92.3.0` に固定 |
 | 12 | E5.Flex の OCPU 上限 | 検証テナンシでは 6 OCPU で問題なし（テナンシにより要確認） |
@@ -201,4 +188,3 @@ Step 3（P/D）: Prefill Pod（`--time-to-first-token 1500ms`）→ Decode Pod�
 - **Helm 4 は server-side apply** のため、2 回目の `kserve-runtime-configs` 更新が KServe コントローラーと競合します。Helm 4 のときだけ `--force-conflicts` を付けています。
 - EPP の inline config の `apiVersion` は KServe v0.20.0 が生成するものに合わせ `inference.networking.x-k8s.io/v1alpha1` を使っています。
 - KServe v0.20.0 の scheduler preset には UDS tokenizer サイドカーが含まれますが、本デモの構成では EPP Pod は `main` 1 コンテナで起動しました。
-- Deploy to OCI ボタン相当の確認として、`stack.zip`（`schema.yaml` 込み）から別スタックを作成し Plan（51 リソース追加）が通ることを確認済みです。GitHub Release 経由のボタン動作そのものは、Release 公開後に確認してください（未検証）。

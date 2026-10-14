@@ -1,12 +1,12 @@
-# ---- ORM が自動で値を渡す標準変数（Deploy to OCI ボタン経由でも同じ） ----
+# ---- ORM の標準変数（scripts/10-infra-up.sh が OCI CLI プロファイルから渡す） ----
 variable "tenancy_ocid" {
   type        = string
-  description = "テナンシ OCID（ORM が自動設定）"
+  description = "テナンシ OCID（10-infra-up.sh が OCI CLI プロファイルから設定）"
 }
 
 variable "region" {
   type        = string
-  description = "デプロイ先リージョン（ORM がスタックのリージョンを自動設定）"
+  description = "デプロイ先リージョン（10-infra-up.sh が OCI CLI プロファイルから設定）"
 }
 
 variable "compartment_ocid" {

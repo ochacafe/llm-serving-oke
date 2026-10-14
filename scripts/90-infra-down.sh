@@ -11,7 +11,7 @@ if [[ -z "${stack_id}" && -n "${OCI_COMPARTMENT_OCID:-}" ]]; then
   stack_id="$(oci resource-manager stack list --compartment-id "${OCI_COMPARTMENT_OCID}" \
     --display-name "$(stack_display_name)" --lifecycle-state ACTIVE --query 'data[0].id' --raw-output 2>/dev/null || true)"
 fi
-[[ -n "${stack_id}" && "${stack_id}" != "null" ]] || die "ORM スタックが見つかりません（Deploy ボタンで作った場合はコンソールから Destroy してください）"
+[[ -n "${stack_id}" && "${stack_id}" != "null" ]] || die "ORM スタックが見つかりません"
 
 if [[ "${FORCE:-0}" != "1" ]]; then
   printf 'スタック %s の全リソースを削除します。よろしいですか? [y/N] ' "${stack_id}"

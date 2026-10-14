@@ -2,7 +2,7 @@
 # OKE クラスタを OCI Resource Manager (ORM) で作成/更新し、kubeconfig を生成する。
 #
 #   bash scripts/10-infra-up.sh                    # ORM スタック作成(or 更新) → Apply → kubeconfig
-#   bash scripts/10-infra-up.sh --cluster-id <id>  # 既存クラスタ（Deploy to OCI ボタンで作成など）の kubeconfig だけ作る
+#   bash scripts/10-infra-up.sh --cluster-id <id>  # 既存クラスタの kubeconfig だけ作る
 #
 # 必要な環境変数（.env でも可）: OCI_COMPARTMENT_OCID
 # 任意: OCI_CLI_PROFILE(DEFAULT) / ADMIN_CIDRS(未設定なら自 IP/32 を自動検出) / CLUSTER_NAME / OKE_CLUSTER_ID

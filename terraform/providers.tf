@@ -1,6 +1,6 @@
 # 認証情報はここに書かない。
-# - OCI Resource Manager 実行時: ORM が実行ユーザーの権限で provider を認証し、
-#   region / tenancy_ocid / compartment_ocid 変数に値を自動で渡す。
+# - OCI Resource Manager が実行ユーザーの権限で provider を認証する。
+# - region / tenancy_ocid / compartment_ocid は scripts/10-infra-up.sh がスタック変数として渡す。
 # - リージョン名はコードに持たない（スタックを作成したリージョン = var.region）。
 
 provider "oci" {
