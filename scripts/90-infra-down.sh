@@ -31,7 +31,8 @@ info "Destroy ジョブを実行します"
 job_id="$(oci resource-manager job create-destroy-job --stack-id "${stack_id}" \
   --execution-plan-strategy AUTO_APPROVED --query 'data.id' --raw-output)"
 while :; do
-  state="$(oci resource-manager job get --job-id "${job_id}" --query 'data."lifecycle-state"' --raw-output)"
+  # API が一時的にタイムアウトしてもジョブは OCI 側で進むので、取得失敗は再試行する
+  state="$(oci resource-manager job get --job-id "${job_id}" --query 'data."lifecycle-state"' --raw-output 2>/dev/null)" || state="UNKNOWN(取得失敗・再試行)"
   case "${state}" in
     SUCCEEDED) ok "Destroy 完了"; break ;;
     FAILED|CANCELED)
